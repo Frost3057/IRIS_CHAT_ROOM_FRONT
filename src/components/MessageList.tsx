@@ -1,6 +1,15 @@
 import { useEffect, useRef } from "react";
 import { MessageBubble } from "./MessageBubble";
 
+interface AnalysisData {
+  content: string;
+  reasoning: string;
+  level_of_danger: string;
+  model_prediction: Record<string, unknown>;
+  final_score: number;
+  grooming_style: string;
+}
+
 interface Message {
   id: string;
   username: string;
@@ -9,6 +18,7 @@ interface Message {
   displayTimestamp?: string;
   isOwn?: boolean;
   isSystem?: boolean;
+  analysis?: AnalysisData;
 }
 
 interface MessageListProps {

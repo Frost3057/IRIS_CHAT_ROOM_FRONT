@@ -16,6 +16,15 @@ type RoomUser = {
   role: UserRole;
 };
 
+type AnalysisData = {
+  content: string;
+  reasoning: string;
+  level_of_danger: string;
+  model_prediction: Record<string, unknown>;
+  final_score: number;
+  grooming_style: string;
+};
+
 type ChatMessage = {
   id: string;
   username: string;
@@ -24,6 +33,7 @@ type ChatMessage = {
   displayTimestamp?: string;
   isOwn?: boolean;
   isSystem?: boolean;
+  analysis?: AnalysisData;
 };
 
 type ServerPayload = Record<string, unknown>;
@@ -130,6 +140,20 @@ const parseChatPayload = (payload: string, currentUser: string): ChatMessage => 
       extractString(jsonPayload.timestamp) ??
       extractString(jsonPayload.time);
 
+    // Extract analysis data if present
+    const analysisData = jsonPayload.analysis as Record<string, unknown> | undefined;
+    let analysis: AnalysisData | undefined;
+    if (analysisData && typeof analysisData === 'object') {
+      analysis = {
+        content: extractString(analysisData.content) ?? '',
+        reasoning: extractString(analysisData.reasoning) ?? '',
+        level_of_danger: extractString(analysisData.level_of_danger) ?? 'Unknown',
+        model_prediction: analysisData.model_prediction as Record<string, unknown> ?? {},
+        final_score: typeof analysisData.final_score === 'number' ? analysisData.final_score : 0,
+        grooming_style: extractString(analysisData.grooming_style) ?? 'N/A'
+      };
+    }
+
     const { date, label } = deriveTimestamp(timestampSource);
     // Defensive normalization: some servers may mistakenly append a time to the username
     // e.g. "frosti03:29" or "frosti 03:29". Detect and split that so the UI can
@@ -160,6 +184,7 @@ const parseChatPayload = (payload: string, currentUser: string): ChatMessage => 
       displayTimestamp: normalizedLabel,
       isOwn: !isSystem && normalizedSender === currentUser,
       isSystem,
+      analysis,
     };
   }
 
@@ -261,6 +286,21 @@ export function ChatRoom({ currentUser = "you", socket }: ChatRoomProps) {
 
             const timestampSource = extractString(item.date_time ?? item.timestamp ?? item.time);
             const { date, label } = deriveTimestamp(timestampSource);
+            
+            // Extract analysis data if present
+            const analysisData = item.analysis as Record<string, unknown> | undefined;
+            let analysis: AnalysisData | undefined;
+            if (analysisData && typeof analysisData === 'object') {
+              analysis = {
+                content: extractString(analysisData.content) ?? '',
+                reasoning: extractString(analysisData.reasoning) ?? '',
+                level_of_danger: extractString(analysisData.level_of_danger) ?? 'Unknown',
+                model_prediction: analysisData.model_prediction as Record<string, unknown> ?? {},
+                final_score: typeof analysisData.final_score === 'number' ? analysisData.final_score : 0,
+                grooming_style: extractString(analysisData.grooming_style) ?? 'N/A'
+              };
+            }
+            
             // Defensive normalization: split trailing time in sender like "frosti03:29"
             let normalizedSender = sender;
             let normalizedLabel = label;
@@ -284,6 +324,7 @@ export function ChatRoom({ currentUser = "you", socket }: ChatRoomProps) {
               displayTimestamp: normalizedLabel,
               isOwn: !isSystem && normalizedSender === currentUser,
               isSystem,
+              analysis,
             } as ChatMessage;
           });
 
