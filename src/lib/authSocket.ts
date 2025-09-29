@@ -24,22 +24,8 @@ function resolveBaseUrl() {
 
   const envPort = import.meta.env.VITE_WS_PORT as string | undefined;
 
-  if (typeof window !== "undefined" && window.location) {
-    const { protocol, hostname, port } = window.location;
-    const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
-
-    const useDevDefaultPort = import.meta.env.DEV && (!envPort || envPort === "auto");
-    const resolvedPort = envPort
-      ? envPort
-      : useDevDefaultPort && port !== "8000"
-        ? "8000"
-        : port;
-
-    const portSegment = resolvedPort ? `:${resolvedPort}` : "";
-    return `${wsProtocol}//${hostname}${portSegment}`;
-  }
-
-  return "ws://localhost:8000";
+  // Always use our production server address
+  return "ws://13.233.208.206:8000";
 }
 
 function getRoutePath(route: AuthRoute) {
@@ -49,15 +35,20 @@ function getRoutePath(route: AuthRoute) {
 function buildWebSocketUrl(route: AuthRoute, username: string) {
   const base = resolveBaseUrl();
   const path = getRoutePath(route);
+  console.log('[authSocket] Building URL - base:', base, 'path:', path, 'username:', username);
   try {
     const url = new URL(`${base}${path}`);
     if (username) {
       url.searchParams.set("userName", username);
     }
+    console.log('[authSocket] Final URL:', url.toString());
     return url.toString();
   } catch (error) {
+    console.log('[authSocket] URL construction failed, using fallback');
     const encodedUser = username ? `?userName=${encodeURIComponent(username)}` : "";
-    return `${base}${path}${encodedUser}`;
+    const fallbackUrl = `${base}${path}${encodedUser}`;
+    console.log('[authSocket] Fallback URL:', fallbackUrl);
+    return fallbackUrl;
   }
 }
 
@@ -73,12 +64,42 @@ export function connectAuthSocket(
   const { signal, timeoutMs = DEFAULT_TIMEOUT } = options;
   const normalizedUsername = credentials.username.trim();
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     if (signal?.aborted) {
       return reject(new DOMException("The connection attempt was aborted.", "AbortError"));
     }
 
+    // Test basic connectivity first
+    try {
+      console.log('[authSocket] Testing connectivity to server...');
+      const testResponse = await fetch('http://13.233.208.206:8000/', { 
+        method: 'HEAD',
+        mode: 'no-cors',
+        signal: AbortSignal.timeout(5000)
+      });
+      console.log('[authSocket] Basic connectivity test completed');
+    } catch (connectivityError) {
+      console.warn('[authSocket] Connectivity test failed:', connectivityError);
+      console.log('[authSocket] Proceeding with WebSocket connection anyway...');
+    }
+
     const url = buildWebSocketUrl(route, normalizedUsername);
+    console.log('[authSocket] Attempting to connect to:', url);
+    
+    // Validate the URL format
+    try {
+      const urlObj = new URL(url);
+      console.log('[authSocket] URL validation:', {
+        protocol: urlObj.protocol,
+        hostname: urlObj.hostname,
+        port: urlObj.port,
+        pathname: urlObj.pathname,
+        search: urlObj.search
+      });
+    } catch (e) {
+      console.error('[authSocket] Invalid URL format:', e);
+    }
+    
     const socket = new WebSocket(url);
     // Buffer messages that might arrive between socket open and the app attaching listeners.
     // Consumers will read and clear `__initialMessageBuffer` if present.
@@ -123,19 +144,36 @@ export function connectAuthSocket(
     // over the websocket after connection; we no longer send credentials
     // in the open event.
     const handleOpen = () => {
+      console.log('[authSocket] WebSocket connection opened successfully');
       settled = true;
       cleanup();
       resolve(socket);
     };
 
-    const handleError = () => {
+    const handleError = (event: Event) => {
+      console.error('[authSocket] WebSocket error:', event);
+      console.error('[authSocket] WebSocket state:', {
+        readyState: socket.readyState,
+        url: socket.url,
+        protocol: socket.protocol,
+        extensions: socket.extensions
+      });
+      // Try to get more specific error information
+      if (event.target) {
+        const ws = event.target as WebSocket;
+        console.error('[authSocket] WebSocket target state:', {
+          readyState: ws.readyState,
+          url: ws.url
+        });
+      }
       rejectWithCleanup(new Error("Failed to establish websocket connection."));
     };
 
     const handleClose = (event: CloseEvent) => {
+      console.log('[authSocket] WebSocket closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
       if (!settled) {
         rejectWithCleanup(
-          new Error(`Websocket closed before authentication could complete (code ${event.code}).`)
+          new Error(`Websocket closed before authentication could complete (code ${event.code}, reason: ${event.reason}).`)
         );
       }
     };
