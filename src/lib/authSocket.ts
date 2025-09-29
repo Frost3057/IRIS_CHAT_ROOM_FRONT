@@ -24,8 +24,8 @@ function resolveBaseUrl() {
 
   const envPort = import.meta.env.VITE_WS_PORT as string | undefined;
 
-  // Always use our production server address
-  return "ws://13.233.208.206:8000";
+  // Always use our ngrok tunnel address
+  return "wss://dominique-osmometric-unchemically.ngrok-free.dev";
 }
 
 function getRoutePath(route: AuthRoute) {
